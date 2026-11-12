@@ -10,7 +10,7 @@ Rustyway is not published on crates.io yet, so add it as a git or path dependenc
 
 ```toml
 [dependencies]
-rustyway = { git = "https://github.com/slaytanic87/rustyway" }
+rustyway = { git = "https://github.com/slaytanic87/rustyway", tag = "0.0.1" }
 # or, for a local checkout:
 # rustyway = { path = "../rustyway" }
 
