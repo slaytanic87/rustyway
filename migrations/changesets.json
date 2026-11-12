@@ -1,0 +1,9 @@
+[
+    {
+        "id": 1,
+        "name": "Initial tables",
+        "description": "Initial setup of tables",
+        "script": "V1_initial_setup.sql",
+        "author": "test_user"
+    }
+]

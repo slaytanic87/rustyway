@@ -1,0 +1,4 @@
+/target
+*.duckdb
+.vscode/
+.idea/
