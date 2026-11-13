@@ -1,19 +1,25 @@
-
 use duckdb::{Connection, params};
 use tracing::{debug, error, info};
 
-use crate::{MigrationRepository, model::{MigrationSetType, MigrationState, ChangeSet}, persistence::{get_migration_script, read_change_sets}};
+use crate::{
+    MigrationRepository,
+    model::{ChangeSet, MigrationSetType, MigrationState},
+    persistence::{MigrationSource, read_change_sets},
+};
 
 static MIGRATION_HISTORY_TABLE: &str = "migration_history_table";
 
-
 pub struct RustywayDuckDB {
     connection: Connection,
+    source: Box<dyn MigrationSource>,
 }
 
 impl RustywayDuckDB {
-    pub fn new(connection: Connection) -> Self {
-        Self { connection }
+    pub fn new(connection: Connection, source: impl MigrationSource + 'static) -> Self {
+        Self {
+            connection,
+            source: Box::new(source),
+        }
     }
 }
 
@@ -61,8 +67,9 @@ impl MigrationRepository for RustywayDuckDB {
             .transpose()?;
 
         if let Some((id, script_name)) = last_failed_changeset.clone() {
-
-            let script: String = get_migration_script(&script_name)
+            let script: String = self
+                .source
+                .get(&script_name)
                 .ok_or_else(|| format!("Migration script not found: {}", script_name))?;
 
             info!("Re-executing failed migration script: {}", script_name);
@@ -82,7 +89,7 @@ impl MigrationRepository for RustywayDuckDB {
     }
 
     fn execute_new(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut change_sets: Vec<ChangeSet> = read_change_sets()?;
+        let mut change_sets: Vec<ChangeSet> = read_change_sets(self.source.as_ref())?;
 
         change_sets.sort_by(|a, b| a.id.cmp(&b.id));
 
@@ -107,11 +114,16 @@ impl MigrationRepository for RustywayDuckDB {
                 .iter()
                 .any(|(id, script)| id == &change_set.id || script == &change_set.script)
             {
-                debug!("Skipping already applied migration script {} with id {}", change_set.script, change_set.id);
+                debug!(
+                    "Skipping already applied migration script {} with id {}",
+                    change_set.script, change_set.id
+                );
                 continue;
             }
 
-            let script: String = get_migration_script(&change_set.script)
+            let script: String = self
+                .source
+                .get(&change_set.script)
                 .ok_or_else(|| format!("Migration script not found: {}", change_set.script))?;
 
             info!("Executing migration script: {}", change_set.script);
@@ -120,7 +132,10 @@ impl MigrationRepository for RustywayDuckDB {
             let execution_result = self.connection.execute_batch(&script);
 
             let state: MigrationState = if let Err(e) = &execution_result {
-                error!("Failed to execute migration script {}: {}", change_set.script, e);
+                error!(
+                    "Failed to execute migration script {}: {}",
+                    change_set.script, e
+                );
                 MigrationState::Failed
             } else {
                 MigrationState::Applied

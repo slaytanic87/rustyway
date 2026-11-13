@@ -23,9 +23,21 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }  # op
 
 Open a DuckDB connection, wrap it in `RustywayDuckDB` and call `initialize()`:
 
+Rustyway does not ship any migrations of its own: your application supplies them by implementing `MigrationSource`, typically by embedding its own `migrations/` folder with [`rust-embed`](https://crates.io/crates/rust-embed):
+
 ```rust
 use duckdb::Connection;
-use rustyway::{MigrationRepository, RustywayDuckDB};
+use rustyway::{MigrationRepository, MigrationSource, RustywayDuckDB};
+
+#[derive(rust_embed::RustEmbed)]
+#[folder = "migrations"]
+struct AppMigrations;
+
+impl MigrationSource for AppMigrations {
+    fn get(&self, file_path: &str) -> Option<String> {
+        Self::get(file_path).map(|content| String::from_utf8_lossy(&content.data.as_ref()).into_owned())
+    }
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Optional: show what Rustyway is doing
@@ -36,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let connection = Connection::open("my_app.duckdb")?;
 
     // Creates the history table if needed and applies all pending migrations
-    let migrations = RustywayDuckDB::new(connection);
+    let migrations = RustywayDuckDB::new(connection, AppMigrations);
     migrations.initialize()?;
 
     Ok(())
@@ -44,6 +56,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 Call this once at application start-up, before the rest of your code touches the database. Running it repeatedly is safe: already applied change sets are skipped.
+
+`#[folder = "migrations"]` is resolved relative to **your** crate's manifest directory, so the embedded files are always your own `migrations/` folder, not Rustyway's.
 
 ### Methods of `MigrationRepository`
 
